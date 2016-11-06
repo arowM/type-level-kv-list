@@ -27,6 +27,9 @@ module Data.TypeLevelKVList
   , Lookup
   , keys
   , keys'
+
+  -- * Misc
+  , NamedList
   )
 where
 
