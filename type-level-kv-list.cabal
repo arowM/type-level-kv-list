@@ -1,5 +1,5 @@
 name:                type-level-kv-list
-version:             1.0.0
+version:             1.1.0
 synopsis:            A module for hash map like object with type level keys.
 description:         Please see README.md
 homepage:            https://github.com/arowM/type-level-kv-list#readme
