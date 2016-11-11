@@ -6,3 +6,5 @@
 # type-level-kv-list
 
 A module for hash map like object with type level keys.
+
+https://www.stackage.org/haddock/nightly-2016-11-11/type-level-kv-list-1.1.0/Data-TypeLevelKVList.html
