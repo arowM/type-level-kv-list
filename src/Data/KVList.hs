@@ -1,0 +1,133 @@
+{-| This library provide a brief implementation for extensible records.
+  It is sensitive to the ordering of key-value items, but has simple type constraints and provides short compile time.
+-}
+
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE UndecidableInstances #-}
+
+module Data.KVList
+  (
+  -- * Constructors
+  -- $setup
+    KVList
+  , (:=)((:=))
+  , (&=)
+  , kvcons
+  , empty
+  , singleton
+  , ListKey(..)
+
+  -- * Operators
+  , get
+  , HasKey
+  , (&.)
+  )
+where
+
+import Prelude
+
+import Data.Kind (Constraint, Type)
+import Data.Typeable (Typeable, typeOf)
+import GHC.TypeLits (KnownSymbol, Symbol, TypeError, ErrorMessage(Text))
+import GHC.OverloadedLabels (IsLabel(..))
+import Unsafe.Coerce (unsafeCoerce)
+
+
+-- Constructors
+
+{- $setup #constructors#
+  We can create type level KV list as follows.
+
+  >>> :set -XOverloadedLabels -XTypeOperators
+  >>> import Prelude
+  >>> import Data.KVList (empty, KVList, (:=)((:=)), (&.), (&=))
+  >>> let sampleList = empty &= #foo := "str" &= #bar := 34
+  >>> type SampleList = KVList '[ "foo" := String, "bar" := Int ]
+-}
+
+{-| A value with type level key.
+-}
+data KVList (kvs :: [Type]) where
+  KVNil :: KVList '[]
+  KVCons :: (KnownSymbol key) => key := v -> KVList xs -> KVList ((key := v) ': xs)
+
+{-| -}
+empty :: KVList '[]
+empty = KVNil
+
+(&=) :: (KnownSymbol k, Appended kvs '[k := v] ~ appended) => KVList kvs -> (k := v) -> KVList appended
+(&=) kvs kv = append kvs (singleton kv)
+{-# INLINE (&=) #-}
+
+infixl 1 &=
+
+{-| -}
+kvcons :: (KnownSymbol k) => (k := v) -> KVList kvs -> KVList ((k := v) ': kvs)
+kvcons = KVCons
+
+{-| -}
+data (key :: Symbol) := (value :: Type) where
+  (:=) :: ListKey a -> b -> a := b
+infix 2 :=
+
+deriving instance (Show value) => Show (key := value)
+
+{-| -}
+type HasKey (key :: Symbol) (kvs :: [Type]) (v :: Type) = HasKey_ key kvs kvs v
+
+type family HasKey_ (key :: Symbol) (kvs :: [Type]) (orig :: [Type]) (v :: Type) :: Constraint where
+  HasKey_ key '[] '[] v = TypeError ('Text "The KVList is empty.")
+  HasKey_ key '[] orig v = TypeError ('Text "The Key is not in the KVList.")
+  HasKey_ key ((key := val) ': _) _ v = (val ~ v)
+  HasKey_ key (_ ': kvs) orig v = HasKey_ key kvs orig v
+
+{-| -}
+type family Appended kvs1 kv2 :: [Type] where
+  Appended '[] kv2 = kv2
+  Appended (kv ': kvs) kv2 =
+    kv ': Appended kvs kv2
+
+{-| -}
+append :: (Appended kvs1 kvs2 ~ appended) => KVList kvs1 -> KVList kvs2 -> KVList appended
+append KVNil kvs2 = kvs2
+append (KVCons kv kvs) kvs2 = KVCons kv (append kvs kvs2)
+
+
+{-| -}
+singleton :: (KnownSymbol k) => (k := v) -> KVList '[ k := v ]
+singleton kv = KVCons kv KVNil
+
+
+{-| -}
+get :: (KnownSymbol key, HasKey key kvs v) => ListKey key -> KVList kvs -> v
+get p kvs = get_ p kvs kvs
+
+get_ :: (KnownSymbol key, HasKey key orig v) => ListKey key -> KVList kvs -> KVList orig -> v
+get_ _ KVNil KVNil = error "Unreachable: The KVList is empty."
+get_ _ KVNil _ = error "Unreachable: The Key is not in the KVList."
+get_ p (KVCons (k := v) kvs) orig =
+  if typeOf p == typeOf k then
+    unsafeCoerce v
+  else
+    get_ p kvs orig
+
+
+{-| -}
+(&.) :: (KnownSymbol key, HasKey key kvs v) => KVList kvs -> ListKey key -> v
+(&.) kvs k = get k kvs
+infixl 9 &.
+
+{-| 'ListKey' is just a proxy, but needed to implement a non-orphan 'IsLabel' instance.
+In most cases, you only need to create a `ListKey` instance with @OverloadedLabels@, such as `#foo`.
+-}
+data ListKey (t :: Symbol)
+    = ListKey
+    deriving (Show, Eq, Typeable)
+
+instance l ~ l' => IsLabel (l :: Symbol) (ListKey l') where
+#if MIN_VERSION_base(4, 10, 0)
+    fromLabel = ListKey
+#else
+    fromLabel _ = ListKey
+#endif
