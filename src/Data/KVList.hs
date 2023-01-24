@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ApplicativeDo #-}
 
 module Data.KVList
   (
@@ -13,6 +14,7 @@ module Data.KVList
     KVList
   , (:=)((:=))
   , (&=)
+  , (&=>)
   , kvcons
   , empty
   , singleton
@@ -56,11 +58,33 @@ data KVList (kvs :: [Type]) where
 empty :: KVList '[]
 empty = KVNil
 
+{-| -}
 (&=) :: (KnownSymbol k, Appended kvs '[k := v] ~ appended) => KVList kvs -> (k := v) -> KVList appended
 (&=) kvs kv = append kvs (singleton kv)
 {-# INLINE (&=) #-}
 
 infixl 1 &=
+
+{-| Applicative version of '(&=)'.
+ -
+ - >>> pure KVList.empty
+ - >>>   &=> #foo := (Just 3)
+ - >>>   &=> #bar := (Just "bar")
+ - Just $ KVList.empty &= #foo := 3 &= #bar := "bar"
+ -
+ - >>> pure KVList.empty
+ - >>>   &=> #foo := (Just 3)
+ - >>>   &=> #bar := Nothing
+ - Nothing
+-}
+(&=>) :: (Applicative f, KnownSymbol k, Appended kvs '[k := v] ~ appended) => f (KVList kvs) -> (k := f v) -> f (KVList appended)
+(&=>) fkvs (k := fv) = do
+  kvs <- fkvs
+  v <- fv
+  pure $ (&=) kvs (k := v)
+{-# INLINE (&=>) #-}
+
+infixl 1 &=>
 
 {-| -}
 kvcons :: (KnownSymbol k) => (k := v) -> KVList kvs -> KVList ((k := v) ': kvs)
