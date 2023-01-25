@@ -29,6 +29,8 @@ where
 
 import Prelude
 
+import Data.Functor ((<&>))
+import qualified Data.List as List
 import Data.Kind (Constraint, Type)
 import Data.Typeable (Typeable, typeOf)
 import GHC.TypeLits (KnownSymbol, Symbol, TypeError, ErrorMessage(Text))
@@ -53,6 +55,43 @@ import Unsafe.Coerce (unsafeCoerce)
 data KVList (kvs :: [Type]) where
   KVNil :: KVList '[]
   KVCons :: (KnownSymbol key) => key := v -> KVList xs -> KVList ((key := v) ': xs)
+
+
+{-| -}
+instance ShowFields (KVList kvs) => Show (KVList kvs) where
+  show kvs =
+    List.unlines $
+      "KVList.empty" : showFields kvs
+
+class ShowFields a where
+  showFields :: a -> [String]
+
+instance ShowFields (KVList '[]) where
+  showFields _ = []
+
+instance ( ShowFields (KVList kvs)
+         , Show v
+         ) => ShowFields (KVList ((k := v) ': kvs)) where
+  showFields (KVCons (k := v) next) =
+    let
+      firstLine str =
+        List.unwords
+          [ "&="
+          , "#" <> show k
+          , ":="
+          , str
+          ]
+    in
+    ( case List.lines $ show v of
+        [] -> [ firstLine "" ]
+        [a] -> [ firstLine a ]
+        as ->
+          List.concat
+            [ [ firstLine "(" ]
+            , as <&> \x -> "  " ++ x
+            , [ ")" ]
+            ]
+    ) ++ showFields next
 
 {-| -}
 empty :: KVList '[]
