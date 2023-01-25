@@ -1,5 +1,5 @@
 name: type-level-kv-list
-version: "2.0.1.1"
+version: "2.0.1.2"
 category: "Data"
 synopsis: "Type level Key-Value list."
 description:
