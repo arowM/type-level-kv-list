@@ -56,6 +56,11 @@ data KVList (kvs :: [Type]) where
   KVNil :: KVList '[]
   KVCons :: (KnownSymbol key) => key := v -> KVList xs -> KVList ((key := v) ': xs)
 
+instance Eq (KVList '[]) where
+  (==) _ _ = True
+
+instance (Eq v, Eq (KVList kvs)) => Eq (KVList ((k := v) ': kvs)  ) where
+  (==) (KVCons (_ := v1) next1) (KVCons (_ := v2) next2) = v1 == v2 && next1 == next2
 
 {-| -}
 instance ShowFields (KVList kvs) => Show (KVList kvs) where
