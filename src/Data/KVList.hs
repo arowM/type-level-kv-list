@@ -24,6 +24,8 @@ module Data.KVList
   , get
   , HasKey
   , (&.)
+  , (&.?)
+  , (&.??)
   )
 where
 
@@ -33,7 +35,8 @@ import Data.Functor ((<&>))
 import qualified Data.List as List
 import Data.Kind (Constraint, Type)
 import Data.Typeable (Typeable, typeOf)
-import GHC.TypeLits (KnownSymbol, Symbol, TypeError, ErrorMessage(Text))
+import Data.Proxy (Proxy(Proxy))
+import GHC.TypeLits (KnownSymbol, Symbol, TypeError, ErrorMessage(Text), symbolVal)
 import GHC.OverloadedLabels (IsLabel(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -46,7 +49,8 @@ import Unsafe.Coerce (unsafeCoerce)
   >>> :set -XOverloadedLabels -XTypeOperators
   >>> import Prelude
   >>> import Data.KVList (empty, KVList, (:=)((:=)), (&.), (&=))
-  >>> let sampleList = empty &= #foo := "str" &= #bar := 34
+  >>> import qualified Data.KVList as KVList
+  >>> let sampleList = KVList.empty &= #foo := "str" &= #bar := 34
   >>> type SampleList = KVList '[ "foo" := String, "bar" := Int ]
 -}
 
@@ -65,8 +69,9 @@ instance (Eq v, Eq (KVList kvs)) => Eq (KVList ((k := v) ': kvs)  ) where
 {-| -}
 instance ShowFields (KVList kvs) => Show (KVList kvs) where
   show kvs =
-    List.unlines $
-      "KVList.empty" : showFields kvs
+    ( List.unwords $
+      "(KVList.empty" : showFields kvs
+    ) ++ ")"
 
 class ShowFields a where
   showFields :: a -> [String]
@@ -110,16 +115,22 @@ empty = KVNil
 infixl 1 &=
 
 {-| Applicative version of '(&=)'.
- -
- - >>> pure KVList.empty
- - >>>   &=> #foo := (Just 3)
- - >>>   &=> #bar := (Just "bar")
- - Just $ KVList.empty &= #foo := 3 &= #bar := "bar"
- -
- - >>> pure KVList.empty
- - >>>   &=> #foo := (Just 3)
- - >>>   &=> #bar := Nothing
- - Nothing
+
+>>> import Data.KVList ((&=>))
+>>> :{
+  pure KVList.empty
+    &=> #foo := (Just 3)
+    &=> #bar := (Just "bar")
+:}
+Just (KVList.empty &= #foo := 3 &= #bar := "bar")
+
+>>> :{
+  pure KVList.empty
+    &=> #foo := (Just 3)
+    &=> #bar := Nothing
+:}
+Nothing
+
 -}
 (&=>) :: (Applicative f, KnownSymbol k, Appended kvs '[k := v] ~ appended) => f (KVList kvs) -> (k := f v) -> f (KVList appended)
 (&=>) fkvs (k := fv) = do
@@ -139,7 +150,7 @@ data (key :: Symbol) := (value :: Type) where
   (:=) :: ListKey a -> b -> a := b
 infix 2 :=
 
-deriving instance (Show value) => Show (key := value)
+deriving instance (KnownSymbol key, Show value) => Show (key := value)
 
 {-| -}
 type HasKey (key :: Symbol) (kvs :: [Type]) (v :: Type) = HasKey_ key kvs kvs v
@@ -186,12 +197,59 @@ get_ p (KVCons (k := v) kvs) orig =
 (&.) kvs k = get k kvs
 infixl 9 &.
 
+{-| Helper operator for optional chain.
+
+@
+(&.?) mkvs k = fmap (&. k) mkvs
+@
+
+>>> import Data.KVList ((&.?))
+>>> :{
+  ( KVList.empty
+    &= #foo := Just
+      (KVList.empty
+        &= #bar := "bar"
+      )
+  ) &. #foo &.? #bar
+:}
+Just "bar"
+
+-}
+(&.?) :: (KnownSymbol key, HasKey key kvs v, Functor f) => f (KVList kvs) -> ListKey key -> f v
+(&.?) mkvs k = fmap (&. k) mkvs
+infixl 9 &.?
+
+{-| Helper operator for optional chain.
+
+@
+(&.??) mkvs k = (&. k) =<< mkvs
+@
+
+>>> import Data.KVList ((&.??))
+>>> :{
+  ( KVList.empty
+    &= #foo := Just
+      (KVList.empty
+        &= #bar := Just "bar"
+      )
+  ) &. #foo &.?? #bar
+:}
+Just "bar"
+
+-}
+(&.??) :: (KnownSymbol key, HasKey key kvs (m v), Monad m) => m (KVList kvs) -> ListKey key -> m v
+(&.??) mkvs k = (&. k) =<< mkvs
+infixl 9 &.??
+
 {-| 'ListKey' is just a proxy, but needed to implement a non-orphan 'IsLabel' instance.
 In most cases, you only need to create a `ListKey` instance with @OverloadedLabels@, such as `#foo`.
 -}
 data ListKey (t :: Symbol)
     = ListKey
-    deriving (Show, Eq, Typeable)
+    deriving (Eq, Typeable)
+
+instance (KnownSymbol t) => Show (ListKey t) where
+  show _ = symbolVal (Proxy :: Proxy t)
 
 instance l ~ l' => IsLabel (l :: Symbol) (ListKey l') where
 #if MIN_VERSION_base(4, 10, 0)
